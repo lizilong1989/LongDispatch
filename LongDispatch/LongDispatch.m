@@ -14,13 +14,14 @@
 
 @property (nonatomic, copy) dispatch_block_t block;
 @property (nonatomic, copy, readonly) NSString *taskId;
-@property (nonatomic, assign) BOOL cancel;
+@property (nonatomic, assign, getter=isCancel) BOOL cancel;
 
 @end
 
 @implementation LongBlock
 
 @synthesize taskId = _taskId;
+@synthesize cancel = _cancel;
 
 - (instancetype)init
 {
@@ -33,12 +34,18 @@
 
 - (BOOL)isCancel
 {
-    return _cancel;
+    BOOL isCancel = NO;
+    @synchronized (self) {
+        isCancel = _cancel;
+    }
+    return isCancel;
 }
 
 - (void)setCancel:(BOOL)cancel
 {
-    _cancel = cancel;
+    @synchronized (self) {
+        _cancel = cancel;
+    }
 }
 
 @end
@@ -117,9 +124,8 @@
 
 #pragma mark - public
 
-- (NSString*)addTask:(dispatch_block_t)aBlock
+- (void)addTask:(dispatch_block_t)aBlock
 {
-    NSString *taskId = nil;
     [self _resetCancel];
     
     LongBlock *block = [[LongBlock alloc] init];
@@ -133,13 +139,13 @@
                 while (ret) {
                     ret = dispatch_semaphore_wait(strongSelf->_semaphore, dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC));
                 }
-                if (!strongSelf->_isCancel && !_block.cancel) {
+                if (_block.cancel || strongSelf->_isCancel) {
+                    dispatch_semaphore_signal(strongSelf->_semaphore);
+                } else {
                     dispatch_async(strongSelf->_concurrentQueue,^{
                         aBlock();
                         dispatch_semaphore_signal(strongSelf->_semaphore);
                     });
-                } else {
-                    dispatch_semaphore_signal(strongSelf->_semaphore);
                 }
             }
             [strongSelf->_blockDic removeObjectForKey:_block.taskId];
@@ -148,25 +154,6 @@
     block.block = task;
     [_blockDic setObject:block forKey:block.taskId];
     dispatch_async(_serialQueue, block.block);
-    taskId = [block.taskId copy];
-    return taskId;
-}
-
-- (void)cancelTask:(NSString*)aTaskId
-{
-    __weak typeof(self) weakSelf = self;
-    dispatch_async(_innerQueue, ^{
-        __strong LongDispatch *strongSelf = weakSelf;
-        if (strongSelf) {
-            if ([strongSelf->_blockDic objectForKey:aTaskId]) {
-                LongBlock *block = [strongSelf->_blockDic objectForKey:aTaskId];
-                if (block) {
-                    dispatch_block_cancel(block.block);
-                    block.cancel = YES;
-                }
-            }
-        }
-    });
 }
 
 - (void)cancelAllTask

@@ -21,37 +21,17 @@
     // Override point for customization after application launch.
     
     LongDispatch *dispatch = [LongDispatch new];
-    for (int i = 0; i < 20; i++) {
-        NSString *taskId = [dispatch addTask:^{
+    for (int i = 0; i < 100; i++) {
+        [dispatch addTask:^{
             sleep(3);
             NSLog(@"%d",i);
         }];
-        [dispatch cancelTask:taskId];
     }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-//        [dispatch cancelAllTask];
-//        [dispatch addTask:^{
-//            sleep(3);
-//            NSLog(@"%d",20);
-//        }];
-    });
-
     
-
-//    dispatch_block_t block = dispatch_block_create(DISPATCH_BLOCK_BARRIER, ^{
-//        sleep(10);
-//        NSLog(@"%d",100);
-//    });
-//    
-//    dispatch_async(dispatch_get_global_queue(0, 0), block);
-//    dispatch_block_cancel(block);
-//    
-////    [dispatch addTask:block];
-//    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-////        [dispatch cancelAllTask];
-//        dispatch_block_cancel(block);
-//    });
-
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [dispatch cancelAllTask];
+    });
+    
     return YES;
 }
 

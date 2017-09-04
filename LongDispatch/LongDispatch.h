@@ -24,12 +24,7 @@
  *
  *  @param  aBlock      执行任务
  */
-- (NSString*)addTask:(dispatch_block_t)aBlock;
-
-/*!
- *  取消LongDispatch实例中指定的任务
- */
-- (void)cancelTask:(NSString*)aTaskId;
+- (void)addTask:(dispatch_block_t)aBlock;
 
 /*!
  *  取消LongDispatch实例当前所有任务，正在执行的任务无法取消
