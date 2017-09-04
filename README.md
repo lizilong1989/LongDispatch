@@ -12,7 +12,7 @@ dispatch_async(dispatch_get_global_queue(0,0),^{
 
 如果里面执行的代码是一个比较耗时的操作，例如网络请求，对应的线程就不会立即释放。如果代码没有对上述代码做限制，很有可能会造成设备无法开启新线程。一般最多可以开70-80个线程。为了避免这种场景的出现，基于GCD简单实现了一个LongDispatch，可以设置最大的并发数，限制开启过多的线程。
 
-##集成LongDispatch
+## 集成LongDispatch
 
 通过cocoapods集成
 
