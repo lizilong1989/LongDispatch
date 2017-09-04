@@ -10,6 +10,63 @@
 
 #define kDefaultMaxConcurrentCount 5
 
+@interface LongQueue : NSObject
+{
+    NSMutableArray *_queue;
+    dispatch_queue_t _serialQueue;
+}
+
+- (void)push:(id)aObj;
+
+- (id)top;
+
+- (void)clear;
+
+@end
+
+@implementation LongQueue
+
+- (instancetype)init
+{
+    self = [super init];
+    if (self) {
+        _queue = [NSMutableArray array];
+        NSString *serialName = [NSString stringWithFormat:@"com.zilong.serial.LongQueue.%@",@([[NSDate date] timeIntervalSince1970])];
+        _serialQueue = dispatch_queue_create([serialName cStringUsingEncoding:NSUTF8StringEncoding], DISPATCH_QUEUE_SERIAL);
+    }
+    return self;
+}
+
+- (void)push:(id)aObj
+{
+    dispatch_async(_serialQueue, ^{
+        [_queue addObject:aObj];
+    });
+}
+
+- (id)top
+{
+    __block id obj = nil;
+    dispatch_sync(_serialQueue, ^{
+        if ([_queue count] > 0) {
+            obj = [_queue objectAtIndex:0];
+            [_queue removeObjectAtIndex:0];
+        }
+    });
+    return obj;
+}
+
+- (void)clear
+{
+    dispatch_async(_serialQueue, ^{
+        if ([_queue count] > 0) {
+            [_queue removeAllObjects];
+        }
+    });
+}
+
+@end
+
 @interface LongBlock : NSObject
 
 @property (nonatomic, copy) dispatch_block_t block;
@@ -56,12 +113,15 @@
     dispatch_queue_t _concurrentQueue;
     dispatch_queue_t _innerQueue;
     dispatch_semaphore_t _semaphore;
+    dispatch_source_t _pollingTimer;
     
     long _maxConcurrentCount;
     BOOL _isCancel;
     NSTimeInterval _cancelTime;
     
     NSMutableDictionary *_blockDic;
+    LongQueue *_taskQueue;
+    BOOL _stopLoop;
 }
 
 @end
@@ -109,6 +169,9 @@
     _semaphore = dispatch_semaphore_create(_maxConcurrentCount);
     
     _blockDic = [NSMutableDictionary dictionary];
+    _taskQueue = [LongQueue new];
+    
+    _stopLoop = YES;
 }
 
 - (void)_resetCancel
@@ -120,6 +183,56 @@
         }
         _isCancel = NO;
     }
+}
+
+- (void)_dealLoop
+{
+    if (!_stopLoop) {
+        return;
+    }
+    _stopLoop = NO;
+    __weak typeof(self) weakSelf = self;
+    dispatch_block_t block = ^{
+        __strong LongDispatch *strongSelf = weakSelf;
+        if (strongSelf) {
+            strongSelf->_pollingTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, strongSelf->_innerQueue);
+            dispatch_source_set_event_handler(strongSelf->_pollingTimer, ^{
+                if (!strongSelf->_stopLoop) {
+                    long ret = dispatch_semaphore_wait(strongSelf->_semaphore, dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC));
+                    if (!ret) {
+                        LongBlock *block = (LongBlock*)[strongSelf->_taskQueue top];
+                        if (block) {
+                            dispatch_async(strongSelf->_serialQueue, block.block);
+                        } else {
+                            [strongSelf _cancelLoop];
+                        }
+                    }
+                }
+            });
+            
+            dispatch_source_set_timer(strongSelf->_pollingTimer,dispatch_time(DISPATCH_TIME_NOW, 0),
+                                      0.05 * NSEC_PER_SEC, 0);
+            dispatch_resume(strongSelf->_pollingTimer);
+        }
+    };
+    dispatch_async(_innerQueue, block);
+}
+
+- (void)_cancelLoop
+{
+    __weak typeof(self) weakSelf = self;
+    dispatch_block_t block = ^{
+        __strong LongDispatch *strongSelf = weakSelf;
+        if (strongSelf) {
+            strongSelf->_stopLoop = YES;
+            if (strongSelf->_pollingTimer) {
+                dispatch_suspend(strongSelf->_pollingTimer);
+                dispatch_source_cancel(strongSelf->_pollingTimer);
+            }
+        }
+    };
+    
+    dispatch_async(_innerQueue, block);
 }
 
 #pragma mark - public
@@ -135,10 +248,6 @@
         __strong LongDispatch *strongSelf = weakSelf;
         if (strongSelf) {
             if (!strongSelf->_isCancel) {
-                long ret = 1;
-                while (ret) {
-                    ret = dispatch_semaphore_wait(strongSelf->_semaphore, dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC));
-                }
                 if (_block.cancel || strongSelf->_isCancel) {
                     dispatch_semaphore_signal(strongSelf->_semaphore);
                 } else {
@@ -147,13 +256,23 @@
                         dispatch_semaphore_signal(strongSelf->_semaphore);
                     });
                 }
+            } else {
+                dispatch_semaphore_signal(strongSelf->_semaphore);
             }
             [strongSelf->_blockDic removeObjectForKey:_block.taskId];
         }
     });
     block.block = task;
     [_blockDic setObject:block forKey:block.taskId];
-    dispatch_async(_serialQueue, block.block);
+    [_taskQueue push:block];
+    dispatch_async(_innerQueue, ^{
+        __strong LongDispatch *strongSelf = weakSelf;
+        if (strongSelf) {
+            if (strongSelf->_stopLoop) {
+                [strongSelf _dealLoop];
+            }
+        }
+    });
 }
 
 - (void)cancelAllTask
@@ -164,13 +283,8 @@
         __strong LongDispatch *strongSelf = weakSelf;
         if (strongSelf) {
             strongSelf->_isCancel = YES;
-            for (NSString *key in strongSelf->_blockDic.allKeys) {
-                LongBlock *block = [strongSelf->_blockDic objectForKey:key];
-                dispatch_block_cancel(block.block);
-            }
-            dispatch_async(strongSelf->_serialQueue, ^{
-                [strongSelf->_blockDic removeAllObjects];
-            });
+            [strongSelf->_blockDic removeAllObjects];
+            [strongSelf->_taskQueue clear];
         }
     });
 }
