@@ -58,7 +58,7 @@
 
 - (void)clear
 {
-    dispatch_async(_serialQueue, ^{
+    dispatch_sync(_serialQueue, ^{
         if ([_queue count] > 0) {
             [_queue removeAllObjects];
         }
@@ -226,8 +226,8 @@
         if (strongSelf) {
             strongSelf->_stopLoop = YES;
             if (strongSelf->_pollingTimer) {
-                dispatch_suspend(strongSelf->_pollingTimer);
                 dispatch_source_cancel(strongSelf->_pollingTimer);
+                strongSelf->_pollingTimer = nil;
             }
         }
     };
@@ -279,7 +279,7 @@
 {
    _cancelTime = [[NSDate date] timeIntervalSince1970];
     __weak typeof(self) weakSelf = self;
-    dispatch_async(_innerQueue, ^{
+    dispatch_sync(_innerQueue, ^{
         __strong LongDispatch *strongSelf = weakSelf;
         if (strongSelf) {
             strongSelf->_isCancel = YES;

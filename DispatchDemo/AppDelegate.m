@@ -21,15 +21,19 @@
     // Override point for customization after application launch.
     
     LongDispatch *dispatch = [LongDispatch new];
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 1000; i++) {
         [dispatch addTask:^{
-            sleep(3);
             NSLog(@"%d",i);
         }];
     }
     
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [dispatch cancelAllTask];
+        for (int i = 0; i < 1000; i++) {
+            [dispatch addTask:^{
+                NSLog(@"%d",i);
+            }];
+        }
     });
     
     return YES;
