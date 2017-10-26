@@ -198,7 +198,7 @@
             strongSelf->_pollingTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, strongSelf->_innerQueue);
             dispatch_source_set_event_handler(strongSelf->_pollingTimer, ^{
                 if (!strongSelf->_stopLoop) {
-                    long ret = dispatch_semaphore_wait(strongSelf->_semaphore, dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC));
+                    long ret = dispatch_semaphore_wait(strongSelf->_semaphore, DISPATCH_TIME_FOREVER);
                     if (!ret) {
                         LongBlock *block = (LongBlock*)[strongSelf->_taskQueue top];
                         if (block) {
