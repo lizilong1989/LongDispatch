@@ -204,8 +204,12 @@
                         if (block) {
                             dispatch_async(strongSelf->_serialQueue, block.block);
                         } else {
+                            dispatch_semaphore_signal(strongSelf->_semaphore);
                             [strongSelf _cancelLoop];
                         }
+                    } else {
+                        dispatch_semaphore_signal(strongSelf->_semaphore);
+                        [strongSelf _cancelLoop];
                     }
                 }
             });
@@ -260,6 +264,8 @@
                 dispatch_semaphore_signal(strongSelf->_semaphore);
             }
             [strongSelf->_blockDic removeObjectForKey:_block.taskId];
+        } else {
+            dispatch_semaphore_signal(strongSelf->_semaphore);
         }
     });
     block.block = task;

@@ -1,6 +1,6 @@
 Pod::Spec.new do |spec|
   spec.name         = 'LongDispatch'
-  spec.version      = '1.0.2'
+  spec.version      = '1.0.3'
   spec.license      = { :type => 'Personal', :text => 'zilong.li' }
   spec.summary      = 'An Objective-C tool for Dispatch'
   spec.homepage     = 'https://github.com/lizilong1989/LongDispatch.git'
