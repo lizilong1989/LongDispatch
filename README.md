@@ -34,3 +34,17 @@ LongDispatch *dispatch = [LongDispatch new];
 //取消所有任务
 [dispatch cancelAllTask];
 ```
+
+## Relase Note
+
+### v1.0.3
+* 修复任务处理问题
+
+### v1.0.2
+* 优化任务处理判断逻辑
+
+### v1.0.1
+* 修复LongDispatch偶尔crash的问题
+
+### v1.0.0
+* 实现线程管理，可以限制提交任务的最大并发数
