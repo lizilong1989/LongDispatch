@@ -112,8 +112,8 @@
     dispatch_queue_t _serialQueue;
     dispatch_queue_t _concurrentQueue;
     dispatch_queue_t _innerQueue;
+    dispatch_queue_t _loopQueue;
     dispatch_semaphore_t _semaphore;
-    dispatch_source_t _pollingTimer;
     
     long _maxConcurrentCount;
     BOOL _isCancel;
@@ -122,6 +122,9 @@
     NSMutableDictionary *_blockDic;
     LongQueue *_taskQueue;
     BOOL _stopLoop;
+    
+    CFRunLoopRef _runLoofRef;
+    CFRunLoopSourceRef _source;
 }
 
 @end
@@ -165,6 +168,9 @@
     NSString *innerName = [NSString stringWithFormat:@"com.zilong.inner.queue.%@",@([[NSDate date] timeIntervalSince1970])];
     _innerQueue = dispatch_queue_create([innerName cStringUsingEncoding:NSUTF8StringEncoding], DISPATCH_QUEUE_SERIAL);
     
+    NSString *loopName = [NSString stringWithFormat:@"com.zilong.loop.queue.%@",@([[NSDate date] timeIntervalSince1970])];
+    _loopQueue = dispatch_queue_create([loopName cStringUsingEncoding:NSUTF8StringEncoding], DISPATCH_QUEUE_SERIAL);
+    
     _maxConcurrentCount = aMaxCount;
     _semaphore = dispatch_semaphore_create(_maxConcurrentCount);
     
@@ -191,35 +197,78 @@
         return;
     }
     _stopLoop = NO;
+    
     __weak typeof(self) weakSelf = self;
-    dispatch_block_t block = ^{
-        __strong LongDispatch *strongSelf = weakSelf;
-        if (strongSelf) {
-            strongSelf->_pollingTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, strongSelf->_innerQueue);
-            dispatch_source_set_event_handler(strongSelf->_pollingTimer, ^{
+    __strong LongDispatch *strongSelf = weakSelf;
+    dispatch_async(_loopQueue, ^{
+        if (strongSelf->_runLoofRef) {
+            CFRunLoopWakeUp(strongSelf->_runLoofRef);
+            CFRunLoopRun();
+            return;
+        } else {
+            _runLoofRef = CFRunLoopGetCurrent();
+            float interval = (float)1/60;
+            CFRunLoopTimerRef runLoopTimerRef = CFRunLoopTimerCreateWithHandler(CFAllocatorGetDefault(), CFAbsoluteTimeGetCurrent(), interval, 0, 0, ^(CFRunLoopTimerRef timer) {
                 if (!strongSelf->_stopLoop) {
-                    long ret = dispatch_semaphore_wait(strongSelf->_semaphore, DISPATCH_TIME_FOREVER);
-                    if (!ret) {
-                        LongBlock *block = (LongBlock*)[strongSelf->_taskQueue top];
-                        if (block) {
-                            dispatch_async(strongSelf->_serialQueue, block.block);
-                        } else {
-                            dispatch_semaphore_signal(strongSelf->_semaphore);
-                            [strongSelf _cancelLoop];
-                        }
-                    } else {
-                        dispatch_semaphore_signal(strongSelf->_semaphore);
-                        [strongSelf _cancelLoop];
-                    }
+                    CFRunLoopSourceSignal(strongSelf->_source);
                 }
             });
             
-            dispatch_source_set_timer(strongSelf->_pollingTimer,dispatch_time(DISPATCH_TIME_NOW, 0),
-                                      0.05 * NSEC_PER_SEC, 0);
-            dispatch_resume(strongSelf->_pollingTimer);
+            CFRunLoopAddTimer(_runLoofRef, runLoopTimerRef, kCFRunLoopDefaultMode);
+            CFRunLoopSourceContext context = {
+                0,
+                (__bridge void *)self,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                &runloopSourceScheduleRoutine,
+                &runloopSourceCancelRoutine,
+                &runloopSourcePerformRoutine};
+            _source = CFRunLoopSourceCreate(CFAllocatorGetDefault(), 0, &context);
+            CFRunLoopAddSource(_runLoofRef, _source, kCFRunLoopDefaultMode);
+            
+            CFRelease(runLoopTimerRef);
+            
+            CFRunLoopRun();
         }
-    };
-    dispatch_async(_innerQueue, block);
+    });
+}
+
+// 当把当前的runloop source添加到runloop中时，会回调这个方法，主线程管理该input source，
+// 所以使用performSelectorOnMainThread 通知主线程。主线程和当前线程的通信使用CFRunLoopSourceContext来完成
+void runloopSourceScheduleRoutine(void *info, CFRunLoopRef runLoopRef, CFStringRef mode)
+{
+    
+}
+
+/// 如果使用CFRunLoopSourceInvalidate函数把输入源从Runloop里面移除的话，系统会调用该方法。
+void runloopSourceCancelRoutine(void *info, CFRunLoopRef runLoopRef, CFStringRef mode)
+{
+    
+}
+
+/// 当前input source 被告知需要处理事件的回调方法
+void runloopSourcePerformRoutine(void *info)
+{
+    LongDispatch *dispatch = (__bridge LongDispatch *)(info);
+    if (!dispatch->_stopLoop) {
+        long ret = dispatch_semaphore_wait(dispatch->_semaphore, DISPATCH_TIME_FOREVER);
+        if (!ret) {
+            LongBlock *block = (LongBlock*)[dispatch->_taskQueue top];
+            if (block) {
+                dispatch_async(dispatch->_serialQueue, block.block);
+            } else {
+                dispatch_semaphore_signal(dispatch->_semaphore);
+                [dispatch _cancelLoop];
+            }
+        } else {
+            dispatch_semaphore_signal(dispatch->_semaphore);
+            [dispatch _cancelLoop];
+        }
+
+    }
 }
 
 - (void)_cancelLoop
@@ -229,14 +278,11 @@
         __strong LongDispatch *strongSelf = weakSelf;
         if (strongSelf) {
             strongSelf->_stopLoop = YES;
-            if (strongSelf->_pollingTimer) {
-                dispatch_source_cancel(strongSelf->_pollingTimer);
-                strongSelf->_pollingTimer = nil;
-            }
+            CFRunLoopStop(strongSelf->_runLoofRef);
         }
     };
     
-    dispatch_async(_innerQueue, block);
+    dispatch_async(_loopQueue, block);
 }
 
 #pragma mark - public
@@ -263,13 +309,11 @@
             } else {
                 dispatch_semaphore_signal(strongSelf->_semaphore);
             }
-            [strongSelf->_blockDic removeObjectForKey:_block.taskId];
         } else {
             dispatch_semaphore_signal(strongSelf->_semaphore);
         }
     });
     block.block = task;
-    [_blockDic setObject:block forKey:block.taskId];
     [_taskQueue push:block];
     dispatch_async(_innerQueue, ^{
         __strong LongDispatch *strongSelf = weakSelf;
@@ -289,7 +333,6 @@
         __strong LongDispatch *strongSelf = weakSelf;
         if (strongSelf) {
             strongSelf->_isCancel = YES;
-            [strongSelf->_blockDic removeAllObjects];
             [strongSelf->_taskQueue clear];
         }
     });
