@@ -23,17 +23,32 @@
     LongDispatch *dispatch = [LongDispatch new];
     for (int i = 0; i < 1000; i++) {
         [dispatch addTask:^{
-            NSLog(@"%d",i);
+            NSLog(@"~~~~%d",i);
         }];
+//        dispatch_async(dispatch_get_global_queue(0, 0), ^{
+//            NSLog(@"%d",i);
+//        });
     }
     
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [dispatch cancelAllTask];
-        for (int i = 0; i < 1000; i++) {
-            [dispatch addTask:^{
-                NSLog(@"%d",i);
-            }];
-        }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            for (int i = 0; i < 1000; i++) {
+                [dispatch addTask:^{
+                    NSLog(@"----%d",i);
+                }];
+            }
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [dispatch cancelAllTask];
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    for (int i = 0; i < 1000; i++) {
+                        [dispatch addTask:^{
+                            NSLog(@"%d",i);
+                        }];
+                    }
+                });
+            });
+        });
     });
     
     return YES;

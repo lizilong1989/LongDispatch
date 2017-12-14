@@ -214,7 +214,7 @@
                 }
             });
             
-            CFRunLoopAddTimer(_runLoofRef, runLoopTimerRef, kCFRunLoopDefaultMode);
+            CFRunLoopAddTimer(_runLoofRef, runLoopTimerRef, kCFRunLoopCommonModes);
             CFRunLoopSourceContext context = {
                 0,
                 (__bridge void *)self,
@@ -227,7 +227,7 @@
                 &runloopSourceCancelRoutine,
                 &runloopSourcePerformRoutine};
             _source = CFRunLoopSourceCreate(CFAllocatorGetDefault(), 0, &context);
-            CFRunLoopAddSource(_runLoofRef, _source, kCFRunLoopDefaultMode);
+            CFRunLoopAddSource(_runLoofRef, _source, kCFRunLoopCommonModes);
             
             CFRelease(runLoopTimerRef);
             
@@ -267,7 +267,6 @@ void runloopSourcePerformRoutine(void *info)
             dispatch_semaphore_signal(dispatch->_semaphore);
             [dispatch _cancelLoop];
         }
-
     }
 }
 
